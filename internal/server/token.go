@@ -255,6 +255,8 @@ type searchScanBaseTokens struct {
 	tileX      int
 	tileY      int
 	tileZ      int
+	speedLimit float64
+	speedField string
 }
 
 func (s *Server) parseSearchScanBaseTokens(
@@ -551,7 +553,7 @@ func (s *Server) parseSearchScanBaseTokens(
 					default:
 						err = errInvalidArgument(peek)
 						return
-					case "inside", "outside", "enter", "exit", "cross":
+					case "inside", "outside", "enter", "exit", "cross", "overspeed", "underspeed":
 					}
 					if t.detect[part] {
 						err = errDuplicateArgument(s)
@@ -561,13 +563,34 @@ func (s *Server) parseSearchScanBaseTokens(
 				}
 				if len(t.detect) == 0 {
 					t.detect = map[string]bool{
-						"inside":  true,
-						"outside": true,
-						"enter":   true,
-						"exit":    true,
-						"cross":   true,
+						"inside":     true,
+						"outside":    true,
+						"enter":      true,
+						"exit":       true,
+						"cross":      true,
+						"overspeed":  true,
+						"underspeed": true,
 					}
 				}
+				continue
+			case "speedlimit":
+				vs = nvs
+				var sLimitStr, sField string
+				if vs, sLimitStr, ok = tokenval(vs); !ok || sLimitStr == "" {
+					err = errInvalidNumberOfArguments
+					return
+				}
+				if vs, sField, ok = tokenval(vs); !ok || sField == "" {
+					err = errInvalidNumberOfArguments
+					return
+				}
+				var sl float64
+				if sl, err = strconv.ParseFloat(sLimitStr, 64); err != nil {
+					err = errInvalidArgument(sLimitStr)
+					return
+				}
+				t.speedLimit = sl
+				t.speedField = sField
 				continue
 			case "nodwell":
 				vs = nvs
