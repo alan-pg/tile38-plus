@@ -18,7 +18,7 @@ It supports a variety of object types including lat/lon points, bounding boxes, 
 
 > [!WARNING]
 > **Tile38-Plus Fork**
-> This project (`tile38-plus`) is a modified fork of the original Tile38 repository. It introduces [exclusive new functionalities](TILE38-PLUS-FEATURES.md) designed for advanced fleet tracking and message ordering. Please be aware that due to these modifications, **some native Tile38 features may have been altered or broken**. Use with caution.
+> This project (`tile38-plus`) is a modified fork of the original Tile38 repository. It introduces [exclusive new functionalities](TILE38-PLUS-FEATURES.md) designed for advanced fleet tracking. Please be aware that due to these modifications, **some native Tile38 features may have been altered or broken**. Use with caution.
 
 
 <p align="center">
