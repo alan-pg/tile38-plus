@@ -27,6 +27,14 @@ When receiving webhook/pubsub messages, your application can now expect:
 3. **Speed = 55**: No additional `overspeed` emitted (already flagged as overspeed), only normal `inside` updates.
 4. **Speed = 35**: Fires `underspeed`.
 
+### Global Speed Limits (No Boundaries)
+If you want to monitor speed limits globally without a specific geographic boundary, you can create a geofence covering the entire world using `BOUNDS -90 -180 90 180`:
+
+```bash
+# Example: Global limit of 120 km/h for the entire 'fleet' collection
+SETCHAN global_limit WITHIN fleet FENCE DETECT overspeed,underspeed SPEEDLIMIT 120.0 speed BOUNDS -90 -180 90 180
+```
+
 ---
 
 ## 2. Chronological Out-of-Order Rejection (`NEWER`)
