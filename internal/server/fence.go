@@ -233,6 +233,45 @@ func fenceMatch(
 		}
 	}
 	var msgs []string
+
+	// ---- SPEED LIMIT FEATURE ----
+	var speedDetect string
+	if fence.speedLimit > 0 && fence.speedField != "" && (detect == "inside" || detect == "enter") && details.command == "fset" || details.command == "set" {
+		var oldSpeed, newSpeed float64
+		var hasOld, hasNew bool
+		if details.old != nil {
+			f := details.old.Fields().Get(fence.speedField)
+			if f.Name() != "" {
+				oldSpeed = f.Value().Num()
+				hasOld = true
+			}
+		}
+		if details.obj != nil {
+			f := details.obj.Fields().Get(fence.speedField)
+			if f.Name() != "" {
+				newSpeed = f.Value().Num()
+				hasNew = true
+			}
+		}
+
+		if hasNew {
+			if !hasOld {
+				// No old speed, just check new
+				if newSpeed > fence.speedLimit {
+					speedDetect = "overspeed"
+				}
+			} else {
+				// We have both
+				if oldSpeed <= fence.speedLimit && newSpeed > fence.speedLimit {
+					speedDetect = "overspeed"
+				} else if oldSpeed > fence.speedLimit && newSpeed <= fence.speedLimit {
+					speedDetect = "underspeed"
+				}
+			}
+		}
+	}
+	// -----------------------------
+
 	if fence.detect == nil || fence.detect[detect] {
 		if len(res) > 0 && res[0] == '{' {
 			msgs = append(msgs, makemsg(details.command, group, detect,
@@ -250,6 +289,15 @@ func fenceMatch(
 		if fence.detect == nil || fence.detect["outside"] {
 			msgs = append(msgs, makemsg(details.command, group, "outside", hookName, metas, details.key, details.timestamp, res[1:]))
 		}
+	}
+	
+	if speedDetect != "" {
+		if fence.detect == nil || fence.detect[speedDetect] {
+			msgs = append(msgs, makemsg(details.command, group, speedDetect, hookName, metas, details.key, details.timestamp, res[1:]))
+		}
+	}
+
+	switch detect {
 	case "roam":
 		if len(msgs) > 0 {
 			var nmsgs []string

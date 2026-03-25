@@ -17,8 +17,8 @@ fi
 
 # Hardcode some values to the core package.
 if [ -d ".git" ]; then
-	VERSION=$(git describe --tags --abbrev=0)
-	GITSHA=$(git rev-parse --short HEAD)
+	VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "1.0.0-custom")
+	GITSHA=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 	LDFLAGS="$LDFLAGS -X github.com/tidwall/tile38/core.Version=${VERSION}"
 	LDFLAGS="$LDFLAGS -X github.com/tidwall/tile38/core.GitSHA=${GITSHA}"
 fi

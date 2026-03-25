@@ -35,6 +35,10 @@ func subTestFence(g *testGroup) {
 
 	// various
 	g.regSubTest("detect eecio", fence_eecio_test)
+
+	// new features
+	g.regSubTest("speed limit testing", fence_speedlimit_test)
+	g.regSubTest("newer keyword testing", fence_newer_test)
 }
 
 type fenceReader struct {
@@ -519,6 +523,173 @@ func fence_eecio_test(mc *mockServer) error {
 			"expected 'enter,inside,exit,outside,cross,outside', got '%s'\n",
 			strings.Join(detects, ","))
 		return errors.New(errmsg)
+	}
+
+	return nil
+}
+
+func fence_speedlimit_test(mc *mockServer) error {
+	conn, err := net.Dial("tcp", fmt.Sprintf(":%d", mc.port))
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	// Add the geofence with a speed limit
+	_, err = fmt.Fprintf(conn, "WITHIN fleet FENCE DETECT inside,outside,overspeed,underspeed SPEEDLIMIT 55.0 speed POINTS BOUNDS 33.618 -84.458 33.654 -84.399\r\n")
+	if err != nil {
+		return err
+	}
+
+	buf := make([]byte, 4096)
+	n, err := conn.Read(buf)
+	if err != nil {
+		return err
+	}
+	res := string(buf[:n])
+	if res != "+OK\r\n" {
+		return fmt.Errorf("expected OK, got '%v'", res)
+	}
+
+	rd := &fenceReader{conn, bufio.NewReader(conn)}
+
+	// Setup normal redis connection
+	c, err := redis.Dial("tcp", fmt.Sprintf(":%d", mc.port))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	// 1: Normal speed, entering fence
+	resStr, err := redis.String(c.Do("SET", "fleet", "truck1", "FIELD", "speed", 45.0, "POINT", "33.642", "-84.431"))
+	if err != nil {
+		return err
+	}
+	if resStr != "OK" {
+		return fmt.Errorf("expected OK, got '%v'", resStr)
+	}
+
+	// Should receive inside but NO overspeed because speed=45.0 (limit=55.0)
+	if err := rd.receiveExpect("command", "set", "detect", "inside", "id", "truck1"); err != nil {
+		return err
+	}
+
+	// 2: Speed up past limit, inside fence
+	resStr, err = redis.String(c.Do("SET", "fleet", "truck1", "FIELD", "speed", 65.0, "POINT", "33.642", "-84.431"))
+	if err != nil {
+		return err
+	}
+	if resStr != "OK" {
+		return fmt.Errorf("expected OK, got '%v'", resStr)
+	}
+
+	// Should receive both inside and overspeed
+	if err := rd.receiveExpect("command", "set", "detect", "inside", "id", "truck1"); err != nil {
+		return err
+	}
+	if err := rd.receiveExpect("command", "set", "detect", "overspeed", "id", "truck1"); err != nil {
+		return err
+	}
+
+	// 3: Slow down below limit, inside fence
+	resStr, err = redis.String(c.Do("SET", "fleet", "truck1", "FIELD", "speed", 50.0, "POINT", "33.642", "-84.431"))
+	if err != nil {
+		return err
+	}
+	if resStr != "OK" {
+		return fmt.Errorf("expected OK, got '%v'", resStr)
+	}
+
+	// Should receive both inside and underspeed
+	if err := rd.receiveExpect("command", "set", "detect", "inside", "id", "truck1"); err != nil {
+		return err
+	}
+	if err := rd.receiveExpect("command", "set", "detect", "underspeed", "id", "truck1"); err != nil {
+		return err
+	}
+
+	// 4: Set new vehicle directly over limit
+	resStr, err = redis.String(c.Do("SET", "fleet", "truck2", "FIELD", "speed", 70.0, "POINT", "33.643", "-84.432"))
+	if err != nil {
+		return err
+	}
+	if resStr != "OK" {
+		return fmt.Errorf("expected OK, got '%v'", resStr)
+	}
+
+	// Should receive inside AND overspeed right away
+	if err := rd.receiveExpect("command", "set", "detect", "inside", "id", "truck2"); err != nil {
+		return err
+	}
+	if err := rd.receiveExpect("command", "set", "detect", "overspeed", "id", "truck2"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func fence_newer_test(mc *mockServer) error {
+	c, err := redis.Dial("tcp", fmt.Sprintf(":%d", mc.port))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	// Initial insert (base timestamp 100)
+	resStr, err := redis.String(c.Do("SET", "fleet", "bus1", "FIELD", "ts", 100.0, "POINT", "33", "-115"))
+	if err != nil {
+		return err
+	}
+	if resStr != "OK" {
+		return fmt.Errorf("expected OK, got '%v'", resStr)
+	}
+
+	// Update with NEWER timestamp 110.0 (Should prosper)
+	resStr, err = redis.String(c.Do("SET", "fleet", "bus1", "FIELD", "ts", 110.0, "NEWER", "ts", "POINT", "33.1", "-115.1"))
+	if err != nil {
+		return err
+	}
+	if resStr != "OK" {
+		return fmt.Errorf("expected OK, got '%v'", resStr)
+	}
+
+	// Out-of-order update with NEWER timestamp 105.0 (Should be silently ignored/failing but return success logic in JSON/false otherwise)
+	// OutputType RESP integer evaluates the silent success block to Integer 0 (instead of OK).
+	resInt, err := redis.Int(c.Do("SET", "fleet", "bus1", "FIELD", "ts", 105.0, "NEWER", "ts", "POINT", "33.2", "-115.2"))
+	if err != nil {
+		return err
+	}
+	if resInt != 0 {
+		return fmt.Errorf("expected 0 for out-of-order, got '%v'", resInt)
+	}
+
+	// Verify object is at timestamp 110.0 location
+	resObjStr, err := redis.String(c.Do("GET", "fleet", "bus1"))
+	if err != nil {
+		return err
+	}
+
+	// Expecting string serialized GeoJSON pointing at 33.1, -115.1
+	if resObjStr != `{"type":"Point","coordinates":[-115.1,33.1]}` {
+		return fmt.Errorf("expected bus1 to be at 33.1,-115.1, got '%v'", resObjStr)
+	}
+	
+	// FSET out-of-order update validation
+	resInt, err = redis.Int(c.Do("FSET", "fleet", "bus1", "NEWER", "ts", "ts", 108.0, "speed", 55.0))
+	if err != nil {
+		return err
+	}
+	if resInt != 0 {
+		return fmt.Errorf("expected 0 for out-of-order FSET, got '%v'", resInt)
+	}
+
+	// FSET newer timestamp validation
+	resInt, err = redis.Int(c.Do("FSET", "fleet", "bus1", "NEWER", "ts", "ts", 120.0, "speed", 60.0))
+	if err != nil {
+		return err
+	}
+	if resInt == 0 {
+		return fmt.Errorf("expected > 0 for in-order FSET, got '%v'", resInt)
 	}
 
 	return nil

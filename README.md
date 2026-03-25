@@ -16,6 +16,11 @@
 Tile38 is an open source (MIT licensed), in-memory geolocation data store, spatial index, and realtime geofencing server.
 It supports a variety of object types including lat/lon points, bounding boxes, XYZ tiles, Geohashes, and GeoJSON. 
 
+> [!WARNING]
+> **Tile38-Plus Fork**
+> This project (`tile38-plus`) is a modified fork of the original Tile38 repository. It introduces [exclusive new functionalities](TILE38-PLUS-FEATURES.md) designed for advanced fleet tracking. Please be aware that due to these modifications, **some native Tile38 features may have been altered or broken**. Use with caution.
+
+
 <p align="center">
 <i>This README is quick start document. You can find detailed documentation at <a href="https://tile38.com">https://tile38.com</a>.</i><br><br>
 <a href="#searching"><img src="/.github/images/search-nearby.png" alt="Nearby" border="0" width="120" height="120"></a>
@@ -27,6 +32,7 @@ It supports a variety of object types including lat/lon points, bounding boxes, 
 
 ## Features
 
+- 🚀 **[NEW] [Tile38-Plus Exclusive Features](TILE38-PLUS-FEATURES.md)**: Speed Limit Geofences (`SPEEDLIMIT`) and Chronological Out-of-Order Rejection (`NEWER`).
 - Spatial index with [search](#searching) methods such as Nearby, Within, and Intersects.
 - Realtime [geofencing](#geofencing) through [webhooks](https://tile38.com/commands/sethook) or [pub/sub channels](#pubsub-channels).
 - Object types of [lat/lon](#latlon-point), [bbox](#bounding-box), [Geohash](#geohash), [GeoJSON](#geojson), [QuadKey](#quadkey), and [XYZ tile](#xyz-tile).

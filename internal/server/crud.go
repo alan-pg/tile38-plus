@@ -639,6 +639,7 @@ func (s *Server) cmdSET(msg *Message) (resp.Value, commandDetails, error) {
 	kind := "object"
 	var precision int64
 	var oobj geojson.Object
+	var newerField string
 
 	args := msg.Args
 	if len(args) < 3 {
@@ -671,6 +672,12 @@ func (s *Server) cmdSET(msg *Message) (resp.Value, commandDetails, error) {
 				return retwerr(errInvalidArgument(exval))
 			}
 			ex = time.Now().UnixNano() + int64(float64(time.Second)*x)
+		case "newer":
+			if i+1 >= len(args) {
+				return retwerr(errInvalidNumberOfArguments)
+			}
+			newerField = args[i+1]
+			i += 1
 		case "nx":
 			if xx {
 				return retwerr(errInvalidArgument(args[i]))
@@ -837,6 +844,36 @@ func (s *Server) cmdSET(msg *Message) (resp.Value, commandDetails, error) {
 
 	var flist field.List
 	if old := col.Get(id); old != nil {
+		if newerField != "" {
+			oldVal := old.Fields().Get(newerField)
+			// we need to find the new value in the parsed `fields`
+			var newVal float64
+			var found bool
+			for _, f := range fields {
+				if f.Name() == newerField {
+					newVal = f.Value().Num()
+					found = true
+					break
+				}
+			}
+			// If not found in current SET fields, should we reject or accept?
+			// We reject because it means the NEWER field is not being updated,
+			// or we could assume it's invalid. Let's reject if the new value isn't provided,
+			// or if the old value is >= new value.
+			if !found || oldVal.Value().Num() >= newVal {
+				// return a silent fail indicator, do not mutate
+				var res resp.Value
+				switch msg.OutputType {
+				default:
+				case JSON:
+					res = resp.StringValue(`{"ok":true,"caught_up":false,"elapsed":"` + time.Since(start).String() + `"}`)
+				case RESP:
+					res = resp.IntegerValue(0)
+				}
+				return res, commandDetails{}, nil
+			}
+		}
+
 		flist = old.Fields()
 	}
 	for _, f := range fields {
@@ -894,6 +931,7 @@ func (s *Server) cmdFSET(msg *Message) (resp.Value, commandDetails, error) {
 	var withfields bool
 	kind := "object"
 	var precision int64
+	var newerField string
 
 	var fields []field.Field // raw fields
 
@@ -907,6 +945,12 @@ func (s *Server) cmdFSET(msg *Message) (resp.Value, commandDetails, error) {
 		switch strings.ToLower(arg) {
 		case "xx":
 			xx = true
+		case "newer":
+			if i+1 >= len(args) {
+				return retwerr(errInvalidNumberOfArguments)
+			}
+			newerField = args[i+1]
+			i += 1
 		case "return":
 			if ret {
 				return retwerr(errInvalidArgument(args[i]))
@@ -975,6 +1019,30 @@ func (s *Server) cmdFSET(msg *Message) (resp.Value, commandDetails, error) {
 	}
 
 	if ok {
+		if newerField != "" {
+			oldVal := o.Fields().Get(newerField)
+			var newVal float64
+			var found bool
+			for _, f := range fields {
+				if f.Name() == newerField {
+					newVal = f.Value().Num()
+					found = true
+					break
+				}
+			}
+			if !found || oldVal.Value().Num() >= newVal {
+				var res resp.Value
+				switch msg.OutputType {
+				default:
+				case JSON:
+					res = resp.StringValue(`{"ok":true,"caught_up":false,"elapsed":"` + time.Since(start).String() + `"}`)
+				case RESP:
+					res = resp.IntegerValue(0)
+				}
+				return res, commandDetails{}, nil
+			}
+		}
+
 		ofields := o.Fields()
 		for _, f := range fields {
 			prev := ofields.Get(f.Name())
